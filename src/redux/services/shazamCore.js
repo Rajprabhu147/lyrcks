@@ -2,66 +2,146 @@
 /* eslint-disable quotes */
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 
+const BASE_URL = "https://shazam-api6.p.rapidapi.com";
+
+// raw baseQuery reading key from Vite env and adding Host header
+const rawBaseQuery = fetchBaseQuery({
+  baseUrl: BASE_URL,
+  prepareHeaders: (headers) => {
+    const key = import.meta.env.VITE_SHAZAM_CORE_RAPID_API_KEY;
+    if (key) {
+      headers.set("X-RapidAPI-Key", key);
+      headers.set("X-RapidAPI-Host", "shazam-api6.p.rapidapi.com");
+    }
+    return headers;
+  },
+});
+
+// wrapper to log API errors and retry on 429 (exponential backoff)
+const baseQueryWithRetry = async (args, api, extraOptions) => {
+  let result;
+  let delay = 500;
+  const maxAttempts = 4;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    result = await rawBaseQuery(args, api, extraOptions);
+
+    if (result?.error) {
+      // eslint-disable-next-line no-console
+      console.error("Shazam API error:", {
+        status: result.error.status,
+        data: result.error.data ?? result.error,
+        args,
+        attempt,
+      });
+    }
+
+    // if not rate-limited, return immediately
+    if (!result?.error || result.error.status !== 429) {
+      return result;
+    }
+
+    // if 429, check Retry-After header (in seconds) and wait accordingly
+    const retryAfter =
+      result?.meta?.response?.headers?.get?.("Retry-After") ??
+      result?.meta?.response?.headers?.get?.("retry-after") ??
+      "0";
+    const waitMs =
+      parseInt(retryAfter, 10) > 0 ? parseInt(retryAfter, 10) * 1000 : delay;
+
+    if (attempt < maxAttempts) {
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((r) => setTimeout(r, waitMs));
+      delay *= 2;
+      continue;
+    }
+
+    return result; // give up after max attempts
+  }
+
+  return result;
+};
+
 export const shazamCoreApi = createApi({
   reducerPath: "shazamCoreApi",
-  baseQuery: fetchBaseQuery({
-    baseUrl: "https://shazam-api6.p.rapidapi.com",
-    prepareHeaders: (headers) => {
-      headers.set(
-        "X-RapidAPI-Key",
-        import.meta.env.VITE_SHAZAM_CORE_RAPID_API_KEY
-      );
-      headers.set("X-RapidAPI-Host", "shazam-api6.p.rapidapi.com");
-      return headers;
-    },
-  }),
+  baseQuery: baseQueryWithRetry,
   endpoints: (builder) => ({
-    // Get top charts/songs globally
+    // Top charts / songs globally
     getTopCharts: builder.query({
       query: () => "/shazam/top_tracks_chart",
     }),
 
-    // Get top songs by genre
+    // Top songs by genre (guard empty genre)
     getSongsByGenre: builder.query({
-      query: (genre) => `/shazam/top_tracks_chart?genre=${genre}&limit=20`,
+      query: (genre) => {
+        if (!genre) return "/shazam/top_tracks_chart";
+        return `/shazam/top_tracks_chart?genre=${encodeURIComponent(
+          genre
+        )}&limit=20`;
+      },
     }),
 
-    // Get song details by track ID
+    // Song details by track ID (guard and encode)
     getSongDetails: builder.query({
-      query: ({ songid }) => `/shazam/get_track_details?track_id=${songid}`,
+      query: ({ songid }) => {
+        if (!songid) return "/shazam/get_track_details";
+        return `/shazam/get_track_details?track_id=${encodeURIComponent(
+          songid
+        )}`;
+      },
     }),
 
-    // Get related songs
+    // Related songs for a track
     getSongRelated: builder.query({
-      query: ({ songid }) => `/shazam/related_tracks?track_id=${songid}`,
+      query: ({ songid }) => {
+        if (!songid) return "/shazam/related_tracks";
+        return `/shazam/related_tracks?track_id=${encodeURIComponent(songid)}`;
+      },
     }),
 
-    // Get artist details
+    // Artist details
     getArtistDetails: builder.query({
-      query: (artistId) => `/shazam/get_artist_details?artist_id=${artistId}`,
+      query: (artistId) => {
+        if (!artistId) return "/shazam/get_artist_details";
+        return `/shazam/get_artist_details?artist_id=${encodeURIComponent(
+          artistId
+        )}`;
+      },
     }),
 
-    // Get top artists
+    // Top artists chart
     getTopArtists: builder.query({
       query: () => "/shazam/top_artists_chart",
     }),
 
-    // Get top songs by country
+    // Top songs by country (guard empty countryCode)
     getSongsByCountry: builder.query({
-      query: (countryCode) =>
-        `/shazam/top_tracks_chart?country=${countryCode}&limit=20`,
+      query: (countryCode) => {
+        if (!countryCode) return "/shazam/top_tracks_chart";
+        return `/shazam/top_tracks_chart?country=${encodeURIComponent(
+          countryCode
+        )}&limit=20`;
+      },
     }),
 
-    // Search for songs and artists
+    // Search songs and artists
     getSongsBySearch: builder.query({
-      query: (searchTerm) =>
-        `/shazam/search?query=${encodeURIComponent(searchTerm)}&limit=10`,
+      query: (searchTerm) => {
+        if (!searchTerm) return "/shazam/search";
+        return `/shazam/search?query=${encodeURIComponent(
+          searchTerm
+        )}&limit=10`;
+      },
     }),
 
-    // Get artist top tracks
+    // Artist top tracks
     getArtistTopTracks: builder.query({
-      query: (artistId) =>
-        `/shazam/get_artist_top_tracks?artist_id=${artistId}`,
+      query: (artistId) => {
+        if (!artistId) return "/shazam/get_artist_top_tracks";
+        return `/shazam/get_artist_top_tracks?artist_id=${encodeURIComponent(
+          artistId
+        )}`;
+      },
     }),
   }),
 });
