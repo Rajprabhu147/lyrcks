@@ -1,3 +1,5 @@
+/* eslint-disable no-await-in-loop */
+/* eslint-disable no-promise-executor-return */
 /* eslint-disable implicit-arrow-linebreak */
 /* eslint-disable quotes */
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
@@ -53,6 +55,7 @@ const baseQueryWithRetry = async (args, api, extraOptions) => {
       // eslint-disable-next-line no-await-in-loop
       await new Promise((r) => setTimeout(r, waitMs));
       delay *= 2;
+      // eslint-disable-next-line no-continue
       continue;
     }
 
