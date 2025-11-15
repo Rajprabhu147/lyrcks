@@ -43,30 +43,36 @@
 // export default AroundYou;
 
 import { useState, useEffect } from "react";
-import axios from "axios";
 import { useGetChartsByCountryQuery } from "../redux/services/shazamApi7";
 import { Error, Loader, SongCard } from "../components";
+import { useSelector } from "react-redux";
 
 const AroundYou = () => {
-  const [country, setCountry] = useState("");
+  const [country, setCountry] = useState("US"); // Default to US
   const [loading, setLoading] = useState(true);
+  const { activeSong, isPlaying } = useSelector((state) => state.player);
 
-  const { data, isFetching, error } = useGetChartsByCountryQuery(country, {
-    skip: country === "",
-  });
+  const { data, isFetching, error } = useGetChartsByCountryQuery(country);
 
   useEffect(() => {
-    // Get user's country using IP geolocation
-    axios
-      .get("https://geo.ipify.org/api/v2/country?apiKey=at_your_ipify_key")
-      .then((res) => setCountry(res.data.location.country))
-      .catch((err) => console.log(err))
+    // Use a free geolocation API (no key needed)
+    fetch("https://ipapi.co/json/")
+      .then((res) => res.json())
+      .then((data) => {
+        setCountry(data.country_code || "US");
+      })
+      .catch((err) => {
+        console.log("Geolocation error, using default US", err);
+        setCountry("US");
+      })
       .finally(() => setLoading(false));
   }, []);
 
-  if (isFetching || loading)
+  if (isFetching || loading) {
     return <Loader title="Loading Songs around you..." />;
-  if (error && country !== "") return <Error />;
+  }
+
+  if (error) return <Error />;
 
   const songs = data?.tracks || [];
 
@@ -81,8 +87,8 @@ const AroundYou = () => {
           <SongCard
             key={song.key || i}
             song={song}
-            isPlaying={false}
-            activeSong={null}
+            isPlaying={isPlaying}
+            activeSong={activeSong}
             data={songs}
             i={i}
           />
